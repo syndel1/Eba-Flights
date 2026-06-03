@@ -1,7 +1,4 @@
-import { kv } from "@vercel/kv"
-
-const TRIPS_KEY = "eba:trips"
-const MAX_TRIPS = 100
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export type TripStatus = "searching" | "awaiting" | "booked" | "smart-tip"
 
@@ -40,26 +37,86 @@ export interface StoredTrip {
   createdAt: number
 }
 
+function toRow(trip: StoredTrip) {
+  return {
+    id: trip.id,
+    slack_message_ts: trip.slackMessageTs,
+    slack_channel_id: trip.slackChannelId,
+    slack_user_id: trip.slackUserId,
+    slack_user_name: trip.slackUserName,
+    quote: trip.quote,
+    channel: trip.channel,
+    status: trip.status,
+    route: trip.route,
+    dates: trip.dates,
+    travelers: trip.travelers,
+    options: trip.options ?? null,
+    booked_info: trip.bookedInfo ?? null,
+    smart_tip: trip.smartTip ?? null,
+    created_at: trip.createdAt,
+  }
+}
+
+function fromRow(row: any): StoredTrip {
+  return {
+    id: row.id,
+    slackMessageTs: row.slack_message_ts,
+    slackChannelId: row.slack_channel_id,
+    slackUserId: row.slack_user_id,
+    slackUserName: row.slack_user_name,
+    quote: row.quote,
+    channel: row.channel,
+    status: row.status,
+    route: row.route,
+    dates: row.dates,
+    travelers: row.travelers ?? [],
+    options: row.options ?? undefined,
+    bookedInfo: row.booked_info ?? undefined,
+    smartTip: row.smart_tip ?? undefined,
+    createdAt: row.created_at,
+  }
+}
+
 export async function addTrip(trip: StoredTrip): Promise<void> {
-  await kv.lpush(TRIPS_KEY, JSON.stringify(trip))
-  await kv.ltrim(TRIPS_KEY, 0, MAX_TRIPS - 1)
+  const supabase = createAdminClient()
+  const { error } = await supabase.from("trips").upsert(toRow(trip))
+  if (error) throw new Error(`addTrip: ${error.message}`)
 }
 
 export async function getTrips(): Promise<StoredTrip[]> {
-  const raw = await kv.lrange<string>(TRIPS_KEY, 0, -1)
-  return raw.map((r) => (typeof r === "string" ? JSON.parse(r) : r))
-}
-
-export async function updateTrip(id: string, updates: Partial<StoredTrip>): Promise<boolean> {
-  const trips = await getTrips()
-  const index = trips.findIndex((t) => t.id === id)
-  if (index === -1) return false
-  const updated = { ...trips[index], ...updates }
-  await kv.lset(TRIPS_KEY, index, JSON.stringify(updated))
-  return true
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from("trips")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100)
+  if (error) throw new Error(`getTrips: ${error.message}`)
+  return (data ?? []).map(fromRow)
 }
 
 export async function getTripById(id: string): Promise<StoredTrip | null> {
-  const trips = await getTrips()
-  return trips.find((t) => t.id === id) ?? null
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from("trips")
+    .select("*")
+    .eq("id", id)
+    .single()
+  if (error) return null
+  return fromRow(data)
+}
+
+export async function updateTrip(id: string, updates: Partial<StoredTrip>): Promise<boolean> {
+  const supabase = createAdminClient()
+  const row: any = {}
+  if (updates.status !== undefined) row.status = updates.status
+  if (updates.options !== undefined) row.options = updates.options
+  if (updates.bookedInfo !== undefined) row.booked_info = updates.bookedInfo
+  if (updates.smartTip !== undefined) row.smart_tip = updates.smartTip
+  if (updates.route !== undefined) row.route = updates.route
+  if (updates.dates !== undefined) row.dates = updates.dates
+  if (updates.travelers !== undefined) row.travelers = updates.travelers
+
+  const { error } = await supabase.from("trips").update(row).eq("id", id)
+  if (error) throw new Error(`updateTrip: ${error.message}`)
+  return true
 }
