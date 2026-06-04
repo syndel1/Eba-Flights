@@ -56,13 +56,11 @@ async function postSlackReply(channelId: string, threadTs: string, text: string)
 // ─── Message parsing ──────────────────────────────────────────────────────────
 
 const AIRPORT_CODES: Record<string, string> = {
+  // USA
   miami: "MIA", mia: "MIA",
-  dallas: "DAL", dal: "DAL", dfw: "DFW",
-  houston: "HOU", hou: "HOU",
-  "new york": "NYC", nyc: "NYC", jfk: "JFK",
-  bogota: "BOG", bog: "BOG",
-  mexico: "MEX", mex: "MEX",
-  orlando: "ORL", mco: "MCO",
+  dallas: "DFW", dal: "DFW", dfw: "DFW",
+  houston: "IAH", hou: "IAH", iah: "IAH",
+  "new york": "JFK", nyc: "JFK", jfk: "JFK", lga: "LGA",
   "san francisco": "SFO", sfo: "SFO",
   "los angeles": "LAX", lax: "LAX",
   chicago: "ORD", ord: "ORD",
@@ -72,12 +70,45 @@ const AIRPORT_CODES: Record<string, string> = {
   atlanta: "ATL", atl: "ATL",
   "new orleans": "MSY", msy: "MSY",
   austin: "AUS", aus: "AUS",
-  medellin: "MDE", mde: "MDE",
+  orlando: "MCO", mco: "MCO",
+  "las vegas": "LAS", las: "LAS",
+  phoenix: "PHX", phx: "PHX",
+  washington: "DCA", dca: "DCA",
+  // Colombia
+  bogota: "BOG", bogotá: "BOG", bog: "BOG",
+  medellin: "MDE", medellín: "MDE", mde: "MDE",
   cartagena: "CTG", ctg: "CTG",
   cali: "CLO", clo: "CLO",
+  barranquilla: "BAQ", baq: "BAQ",
+  // Mexico
+  mexico: "MEX", "ciudad de mexico": "MEX", "mexico city": "MEX", mex: "MEX",
+  cancun: "CUN", cancún: "CUN", cun: "CUN",
+  guadalajara: "GDL", gdl: "GDL",
+  monterrey: "MTY", mty: "MTY",
+  // Latin America
   lima: "LIM", lim: "LIM",
   santiago: "SCL", scl: "SCL",
   "buenos aires": "EZE", eze: "EZE",
+  "la paz": "LPB", lpb: "LPB",
+  bolivia: "LPB",
+  "santa cruz": "VVI", vvi: "VVI",
+  quito: "UIO", uio: "UIO",
+  guayaquil: "GYE", gye: "GYE",
+  caracas: "CCS", ccs: "CCS",
+  "sao paulo": "GRU", "são paulo": "GRU", gru: "GRU",
+  "rio de janeiro": "GIG", gig: "GIG",
+  montevideo: "MVD", mvd: "MVD",
+  asuncion: "ASU", asunción: "ASU", asu: "ASU",
+  panama: "PTY", panamá: "PTY", pty: "PTY",
+  "san jose": "SJO", sjo: "SJO",
+  // Europe
+  madrid: "MAD", mad: "MAD",
+  barcelona: "BCN", bcn: "BCN",
+  london: "LHR", lhr: "LHR",
+  paris: "CDG", cdg: "CDG",
+  // Other
+  toronto: "YYZ", yyz: "YYZ",
+  "mexico df": "MEX",
 }
 
 function extractRoute(text: string): { route: string; origin?: string; destination?: string } {
@@ -89,9 +120,10 @@ function extractRoute(text: string): { route: string; origin?: string; destinati
     return { route: `${o} → ${d}`, origin: o, destination: d }
   }
 
-  // "de X a Y" / "from X to Y" pattern
-  const deA = text.match(
-    /(?:de|from)\s+([a-záéíóúñ\s]+?)\s+(?:a|to)\s+([a-záéíóúñ\s]+?)(?:\s+el|\s+on|\s+the|\s*,|\.|\s*$)/i
+  // "de X a Y" / "from X to Y" pattern — strip commas before matching
+  const cleaned = text.replace(/,/g, " ")
+  const deA = cleaned.match(
+    /(?:de|from)\s+([a-záéíóúñ\s]+?)\s+(?:a|to)\s+([a-záéíóúñ\s]+?)(?:\s+el|\s+on|\s+the|\s+este|\s+en|\s*$)/i
   )
   if (deA) {
     const originCity = deA[1].trim().toLowerCase()
