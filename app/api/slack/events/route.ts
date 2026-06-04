@@ -167,8 +167,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const event = payload.event
-  // Ignore bot messages and edited messages
-  if (!event || event.subtype || event.bot_id || event.hidden) {
+  // Ignore bot messages and edited messages — but allow file_share (image uploads)
+  const isFileShare = event?.subtype === "file_share"
+  if (!event || (event.subtype && !isFileShare) || event.bot_id || event.hidden) {
     return NextResponse.json({ ok: true })
   }
 
