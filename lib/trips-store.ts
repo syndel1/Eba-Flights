@@ -1,4 +1,16 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+// Uses Supabase REST API directly — no SDK dependency issues with new key format
+
+const BASE = () => process.env.NEXT_PUBLIC_SUPABASE_URL!
+const KEY = () => process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+function headers(extra: Record<string, string> = {}) {
+  return {
+    apikey: KEY(),
+    Authorization: `Bearer ${KEY()}`,
+    "Content-Type": "application/json",
+    ...extra,
+  }
+}
 
 export type TripStatus = "searching" | "awaiting" | "booked" | "smart-tip"
 
@@ -47,8 +59,8 @@ function toRow(trip: StoredTrip) {
     quote: trip.quote,
     channel: trip.channel,
     status: trip.status,
-    route: trip.route,
-    dates: trip.dates,
+    route: trip.route ?? null,
+    dates: trip.dates ?? null,
     travelers: trip.travelers,
     options: trip.options ?? null,
     booked_info: trip.bookedInfo ?? null,
@@ -67,8 +79,8 @@ function fromRow(row: any): StoredTrip {
     quote: row.quote,
     channel: row.channel,
     status: row.status,
-    route: row.route,
-    dates: row.dates,
+    route: row.route ?? undefined,
+    dates: row.dates ?? undefined,
     travelers: row.travelers ?? [],
     options: row.options ?? undefined,
     bookedInfo: row.booked_info ?? undefined,
@@ -78,45 +90,61 @@ function fromRow(row: any): StoredTrip {
 }
 
 export async function addTrip(trip: StoredTrip): Promise<void> {
-  const supabase = createAdminClient()
-  const { error } = await supabase.from("trips").upsert(toRow(trip))
-  if (error) throw new Error(`addTrip: ${error.message}`)
+  const res = await fetch(`${BASE()}/rest/v1/trips`, {
+    method: "POST",
+    headers: headers({ Prefer: "resolution=merge-duplicates,return=minimal" }),
+    body: JSON.stringify(toRow(trip)),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`addTrip ${res.status}: ${text}`)
+  }
 }
 
 export async function getTrips(): Promise<StoredTrip[]> {
-  const supabase = createAdminClient()
-  const { data, error } = await supabase
-    .from("trips")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(100)
-  if (error) throw new Error(`getTrips: ${error.message}`)
-  return (data ?? []).map(fromRow)
+  const res = await fetch(
+    `${BASE()}/rest/v1/trips?order=created_at.desc&limit=100`,
+    { headers: headers() }
+  )
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`getTrips ${res.status}: ${text}`)
+  }
+  const rows: any[] = await res.json()
+  return rows.map(fromRow)
 }
 
 export async function getTripById(id: string): Promise<StoredTrip | null> {
-  const supabase = createAdminClient()
-  const { data, error } = await supabase
-    .from("trips")
-    .select("*")
-    .eq("id", id)
-    .single()
-  if (error) return null
-  return fromRow(data)
+  const res = await fetch(
+    `${BASE()}/rest/v1/trips?id=eq.${encodeURIComponent(id)}&limit=1`,
+    { headers: headers() }
+  )
+  if (!res.ok) return null
+  const rows: any[] = await res.json()
+  return rows[0] ? fromRow(rows[0]) : null
 }
 
 export async function updateTrip(id: string, updates: Partial<StoredTrip>): Promise<boolean> {
-  const supabase = createAdminClient()
   const row: any = {}
-  if (updates.status !== undefined) row.status = updates.status
-  if (updates.options !== undefined) row.options = updates.options
-  if (updates.bookedInfo !== undefined) row.booked_info = updates.bookedInfo
-  if (updates.smartTip !== undefined) row.smart_tip = updates.smartTip
-  if (updates.route !== undefined) row.route = updates.route
-  if (updates.dates !== undefined) row.dates = updates.dates
-  if (updates.travelers !== undefined) row.travelers = updates.travelers
+  if (updates.status     !== undefined) row.status      = updates.status
+  if (updates.options    !== undefined) row.options      = updates.options
+  if (updates.bookedInfo !== undefined) row.booked_info  = updates.bookedInfo
+  if (updates.smartTip   !== undefined) row.smart_tip    = updates.smartTip
+  if (updates.route      !== undefined) row.route        = updates.route
+  if (updates.dates      !== undefined) row.dates        = updates.dates
+  if (updates.travelers  !== undefined) row.travelers    = updates.travelers
 
-  const { error } = await supabase.from("trips").update(row).eq("id", id)
-  if (error) throw new Error(`updateTrip: ${error.message}`)
+  const res = await fetch(
+    `${BASE()}/rest/v1/trips?id=eq.${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: headers({ Prefer: "return=minimal" }),
+      body: JSON.stringify(row),
+    }
+  )
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`updateTrip ${res.status}: ${text}`)
+  }
   return true
 }
