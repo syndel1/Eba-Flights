@@ -184,15 +184,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const threadTs: string = event.thread_ts ?? event.ts
   const isDM: boolean = event.channel_type === "im"
   const isMentioned: boolean = text.includes(`<@${payload.authorizations?.[0]?.user_id}>`)
+  const isThreadReply: boolean = !!event.thread_ts && event.ts !== event.thread_ts
 
   // Get image attachment if any
   const imageFile = event.files?.find((f: any) =>
     f.mimetype?.startsWith("image/")
   )
 
-  // In channels: only respond if mentioned, or if it's a new message (not a reply)
-  // In DMs: always respond
-  const shouldProcess = isDM || isMentioned || !event.thread_ts
+  // Process: DMs, mentions, new top-level messages, OR replies in threads
+  // Thread replies continue the booking conversation naturally
+  const shouldProcess = isDM || isMentioned || !event.thread_ts || isThreadReply
   if (!shouldProcess && !imageFile) return NextResponse.json({ ok: true })
 
   // ── Respond to Slack IMMEDIATELY (before any async work) ──────────────────
