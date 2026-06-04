@@ -54,8 +54,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=restricted", request.url))
   }
 
-  // Already logged in and hits /login → skip to dashboard
-  if (user && pathname === "/login") {
+  // Already logged in → skip login page or landing page, go to dashboard
+  if (user && (pathname === "/login" || pathname === "/")) {
     return NextResponse.redirect(new URL("/dashboard", request.url))
   }
 
