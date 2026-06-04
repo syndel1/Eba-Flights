@@ -193,75 +193,67 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // In channels: only respond if mentioned, or if it's a new message (not a reply)
   // In DMs: always respond
   const shouldProcess = isDM || isMentioned || !event.thread_ts
+  if (!shouldProcess && !imageFile) return NextResponse.json({ ok: true })
 
-  if (!shouldProcess && !imageFile) {
-    return NextResponse.json({ ok: true })
-  }
+  // ── Respond to Slack IMMEDIATELY (before any async work) ──────────────────
+  // Slack requires a 200 within 3s or it retries → causing duplicate responses.
+  // All processing happens in after() which runs after the response is sent.
 
-  // Respond immediately to Slack (within 3s requirement)
-  const [userName, channelName, threadHistory] = await Promise.all([
-    getSlackUserName(userId),
-    isDM ? Promise.resolve("DM") : getChannelName(channelId),
-    event.thread_ts ? getThreadHistory(channelId, threadTs) : Promise.resolve([]),
-  ])
+  after(async () => {
+    try {
+      const [userName, channelName, threadHistory] = await Promise.all([
+        getSlackUserName(userId),
+        isDM ? Promise.resolve("DM") : getChannelName(channelId),
+        event.thread_ts ? getThreadHistory(channelId, threadTs) : Promise.resolve([]),
+      ])
 
-  // Download image if present
-  let imageData: { data: string; mimeType: string } | undefined
-  if (imageFile?.url_private) {
-    imageData = await downloadSlackFile(imageFile.url_private) ?? undefined
-  }
+      // Download image if present
+      let imageData: { data: string; mimeType: string } | undefined
+      if (imageFile?.url_private) {
+        imageData = (await downloadSlackFile(imageFile.url_private)) ?? undefined
+      }
 
-  // Analyze with Claude AI
-  const intent = await analyzeMessage(
-    text,
-    threadHistory,
-    imageData?.data,
-    imageData?.mimeType
-  )
-
-  // If not travel related and not in DM, ignore silently
-  if (intent.action === "not_travel" && !isDM) {
-    return NextResponse.json({ ok: true })
-  }
-
-  // Post Claude's response to Slack
-  await postSlackReply(channelId, threadTs, intent.message)
-
-  // If Claude wants to search flights, do it in background
-  if (intent.action === "search" && intent.flightParams?.destination) {
-    const fp = intent.flightParams
-    const departureDate = fp.departureDate ?? parseTripDateToISO(undefined)
-
-    const trip: StoredTrip = {
-      id: `${messageTs}-${userId}`,
-      slackMessageTs: messageTs,
-      slackChannelId: channelId,
-      slackUserId: userId,
-      slackUserName: userName,
-      quote: text || (imageFile ? "[flight screenshot]" : ""),
-      channel: channelName,
-      status: "searching",
-      route: `${fp.origin ?? "?"} → ${fp.destination}`,
-      dates: fp.departureDate,
-      travelers: [{ initials: getInitials(userName), name: userName }],
-      createdAt: Math.floor(parseFloat(messageTs) * 1000),
-    }
-
-    await addTrip(trip)
-
-    after(() =>
-      searchAndUpdateTrip(
-        trip,
-        fp.origin,
-        fp.destination!,
-        departureDate,
-        fp.passengers ?? 1,
-        fp.cabinClass ?? "economy",
-        channelId,
-        threadTs
+      // Analyze with Claude AI
+      const intent = await analyzeMessage(
+        text,
+        threadHistory,
+        imageData?.data,
+        imageData?.mimeType
       )
-    )
-  }
+
+      if (intent.action === "not_travel" && !isDM) return
+
+      await postSlackReply(channelId, threadTs, intent.message)
+
+      if (intent.action === "search" && intent.flightParams?.destination) {
+        const fp = intent.flightParams
+        const departureDate = fp.departureDate ?? parseTripDateToISO(undefined)
+
+        const trip: StoredTrip = {
+          id: `${messageTs}-${userId}`,
+          slackMessageTs: messageTs,
+          slackChannelId: channelId,
+          slackUserId: userId,
+          slackUserName: userName,
+          quote: text || (imageFile ? "[flight screenshot]" : ""),
+          channel: channelName,
+          status: "searching",
+          route: `${fp.origin ?? "?"} → ${fp.destination}`,
+          dates: fp.departureDate,
+          travelers: [{ initials: getInitials(userName), name: userName }],
+          createdAt: Math.floor(parseFloat(messageTs) * 1000),
+        }
+
+        await addTrip(trip)
+        await searchAndUpdateTrip(
+          trip, fp.origin, fp.destination!, departureDate,
+          fp.passengers ?? 1, fp.cabinClass ?? "economy", channelId, threadTs
+        )
+      }
+    } catch (err) {
+      console.error("[slack/events after()]", err)
+    }
+  })
 
   return NextResponse.json({ ok: true })
 }
