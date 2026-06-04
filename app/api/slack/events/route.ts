@@ -111,6 +111,17 @@ const AIRPORT_CODES: Record<string, string> = {
   "mexico df": "MEX",
 }
 
+function findCode(phrase: string): string | undefined {
+  const lower = phrase.toLowerCase().trim().replace(/\s+/g, " ")
+  if (AIRPORT_CODES[lower]) return AIRPORT_CODES[lower]
+  // Try substring match — longest city name wins
+  const entries = Object.entries(AIRPORT_CODES).sort((a, b) => b[0].length - a[0].length)
+  for (const [city, code] of entries) {
+    if (lower.includes(city)) return code
+  }
+  return undefined
+}
+
 function extractRoute(text: string): { route: string; origin?: string; destination?: string } {
   // Explicit IATA codes: BOG → MIA
   const explicit = text.match(/\b([A-Z]{3})\s*[→\-]\s*([A-Z]{3})\b/i)
@@ -126,10 +137,10 @@ function extractRoute(text: string): { route: string; origin?: string; destinati
     /(?:de|from)\s+([a-záéíóúñ\s]+?)\s+(?:a|to)\s+([a-záéíóúñ\s]+?)(?:\s+el|\s+on|\s+the|\s+este|\s+en|\s*$)/i
   )
   if (deA) {
-    const originCity = deA[1].trim().toLowerCase()
-    const destCity = deA[2].trim().toLowerCase()
-    const originCode = AIRPORT_CODES[originCity]
-    const destCode = AIRPORT_CODES[destCity]
+    const originCity = deA[1].trim()
+    const destCity = deA[2].trim()
+    const originCode = findCode(originCity)
+    const destCode = findCode(destCity)
     if (originCode && destCode) return { route: `${originCode} → ${destCode}`, origin: originCode, destination: destCode }
     if (destCode) return { route: `? → ${destCode}`, destination: destCode }
     if (originCode) return { route: `${originCode} → ?`, origin: originCode }
