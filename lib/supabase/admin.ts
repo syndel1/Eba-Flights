@@ -1,9 +1,14 @@
 import { createClient } from "@supabase/supabase-js"
 
-// Server-side admin client — bypasses RLS, never use in browser
+// Server-side admin client — uses service role key, falls back to anon key
 export function createAdminClient() {
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    key,
+    { auth: { autoRefreshToken: false, persistSession: false } }
   )
 }

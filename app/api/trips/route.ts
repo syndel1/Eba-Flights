@@ -4,9 +4,10 @@ import { getTrips, addTrip, StoredTrip } from "@/lib/trips-store"
 export async function GET(): Promise<NextResponse> {
   try {
     const trips = await getTrips()
+    console.log(`[GET /api/trips] returned ${trips.length} trips`)
     return NextResponse.json(trips)
   } catch (err) {
-    console.error("[GET /api/trips]", err)
+    console.error("[GET /api/trips] ERROR:", err)
     return NextResponse.json([], { status: 200 })
   }
 }
