@@ -81,20 +81,38 @@ const AIRPORT_CODES: Record<string, string> = {
 }
 
 function extractRoute(text: string): { route: string; origin?: string; destination?: string } {
+  // Explicit IATA codes: BOG → MIA
   const explicit = text.match(/\b([A-Z]{3})\s*[→\-]\s*([A-Z]{3})\b/i)
   if (explicit) {
     const o = explicit[1].toUpperCase()
     const d = explicit[2].toUpperCase()
     return { route: `${o} → ${d}`, origin: o, destination: d }
   }
+
+  // "de X a Y" / "from X to Y" pattern
+  const deA = text.match(
+    /(?:de|from)\s+([a-záéíóúñ\s]+?)\s+(?:a|to)\s+([a-záéíóúñ\s]+?)(?:\s+el|\s+on|\s+the|\s*,|\.|\s*$)/i
+  )
+  if (deA) {
+    const originCity = deA[1].trim().toLowerCase()
+    const destCity = deA[2].trim().toLowerCase()
+    const originCode = AIRPORT_CODES[originCity]
+    const destCode = AIRPORT_CODES[destCity]
+    if (originCode && destCode) return { route: `${originCode} → ${destCode}`, origin: originCode, destination: destCode }
+    if (destCode) return { route: `? → ${destCode}`, destination: destCode }
+    if (originCode) return { route: `${originCode} → ?`, origin: originCode }
+  }
+
+  // "ir a / going to" pattern
   const dest = text.match(
-    /(?:ir a|volar a|viajar a|going to|flight to|to)\s+([a-záéíóúñ\s]+?)(?:\s+el|\s+on|\s+the|\s+from|\s*,|\.|\s*$)/i
+    /(?:ir a|volar a|viajar a|going to|flight to|voy a)\s+([a-záéíóúñ\s]+?)(?:\s+el|\s+on|\s+the|\s+from|\s*,|\.|\s*$)/i
   )
   if (dest) {
     const city = dest[1].trim().toLowerCase()
     const code = AIRPORT_CODES[city]
     if (code) return { route: `? → ${code}`, destination: code }
   }
+
   const words = text.toLowerCase()
   for (const [city, code] of Object.entries(AIRPORT_CODES)) {
     if (words.includes(city)) return { route: `? → ${code}`, destination: code }
