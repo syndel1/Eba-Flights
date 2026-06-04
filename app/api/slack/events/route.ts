@@ -2,8 +2,9 @@ import { NextRequest, NextResponse, after } from "next/server"
 import crypto from "crypto"
 import { addTrip, updateTrip, StoredTrip } from "@/lib/trips-store"
 import { searchFlights, offersToTripOptions, parseTripDateToISO } from "@/lib/duffel"
+import { analyzeMessage } from "@/lib/eba-ai"
 
-// ─── Slack signature verification ────────────────────────────────────────────
+// ─── Signature verification ───────────────────────────────────────────────────
 
 function verifySlackSignature(body: string, timestamp: string, signature: string): boolean {
   const secret = process.env.SLACK_SIGNING_SECRET
@@ -18,29 +19,16 @@ function verifySlackSignature(body: string, timestamp: string, signature: string
 
 // ─── Slack API helpers ────────────────────────────────────────────────────────
 
-async function getSlackUser(userId: string): Promise<{ name: string }> {
-  try {
-    const res = await fetch(`https://slack.com/api/users.info?user=${userId}`, {
-      headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
-    })
-    const data = await res.json()
-    if (data.ok) return { name: data.user.real_name || data.user.name || userId }
-  } catch {}
-  return { name: userId }
+async function slackGet(endpoint: string, params: Record<string, string> = {}) {
+  const url = new URL(`https://slack.com/api/${endpoint}`)
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
+  })
+  return res.json()
 }
 
-async function getChannelName(channelId: string): Promise<string> {
-  try {
-    const res = await fetch(`https://slack.com/api/conversations.info?channel=${channelId}`, {
-      headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
-    })
-    const data = await res.json()
-    if (data.ok) return `#${data.channel.name}`
-  } catch {}
-  return "#travel"
-}
-
-async function postSlackReply(channelId: string, threadTs: string, text: string): Promise<void> {
+async function postSlackReply(channelId: string, threadTs: string, text: string) {
   try {
     await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
@@ -53,207 +41,106 @@ async function postSlackReply(channelId: string, threadTs: string, text: string)
   } catch {}
 }
 
-// ─── Message parsing ──────────────────────────────────────────────────────────
-
-const AIRPORT_CODES: Record<string, string> = {
-  // USA
-  miami: "MIA", mia: "MIA",
-  dallas: "DFW", dal: "DFW", dfw: "DFW",
-  houston: "IAH", hou: "IAH", iah: "IAH",
-  "new york": "JFK", nyc: "JFK", jfk: "JFK", lga: "LGA",
-  "san francisco": "SFO", sfo: "SFO",
-  "los angeles": "LAX", lax: "LAX",
-  chicago: "ORD", ord: "ORD",
-  denver: "DEN", den: "DEN",
-  seattle: "SEA", sea: "SEA",
-  boston: "BOS", bos: "BOS",
-  atlanta: "ATL", atl: "ATL",
-  "new orleans": "MSY", msy: "MSY",
-  austin: "AUS", aus: "AUS",
-  orlando: "MCO", mco: "MCO",
-  "las vegas": "LAS", las: "LAS",
-  phoenix: "PHX", phx: "PHX",
-  washington: "DCA", dca: "DCA",
-  // Colombia
-  bogota: "BOG", bogotá: "BOG", bog: "BOG",
-  medellin: "MDE", medellín: "MDE", mde: "MDE",
-  cartagena: "CTG", ctg: "CTG",
-  cali: "CLO", clo: "CLO",
-  barranquilla: "BAQ", baq: "BAQ",
-  // Mexico
-  mexico: "MEX", "ciudad de mexico": "MEX", "mexico city": "MEX", mex: "MEX",
-  cancun: "CUN", cancún: "CUN", cun: "CUN",
-  guadalajara: "GDL", gdl: "GDL",
-  monterrey: "MTY", mty: "MTY",
-  // Latin America
-  lima: "LIM", lim: "LIM",
-  santiago: "SCL", scl: "SCL",
-  "buenos aires": "EZE", eze: "EZE",
-  "la paz": "LPB", lpb: "LPB",
-  bolivia: "LPB",
-  "santa cruz": "VVI", vvi: "VVI",
-  quito: "UIO", uio: "UIO",
-  guayaquil: "GYE", gye: "GYE",
-  caracas: "CCS", ccs: "CCS",
-  "sao paulo": "GRU", "são paulo": "GRU", gru: "GRU",
-  "rio de janeiro": "GIG", gig: "GIG",
-  montevideo: "MVD", mvd: "MVD",
-  asuncion: "ASU", asunción: "ASU", asu: "ASU",
-  panama: "PTY", panamá: "PTY", pty: "PTY",
-  "san jose": "SJO", sjo: "SJO",
-  // Europe
-  madrid: "MAD", mad: "MAD",
-  barcelona: "BCN", bcn: "BCN",
-  london: "LHR", lhr: "LHR",
-  paris: "CDG", cdg: "CDG",
-  // Other
-  toronto: "YYZ", yyz: "YYZ",
-  "mexico df": "MEX",
+async function getSlackUserName(userId: string): Promise<string> {
+  try {
+    const data = await slackGet("users.info", { user: userId })
+    return data.user?.real_name || data.user?.name || userId
+  } catch {
+    return userId
+  }
 }
 
-function findCode(phrase: string): string | undefined {
-  const lower = phrase.toLowerCase().trim().replace(/\s+/g, " ")
-  if (AIRPORT_CODES[lower]) return AIRPORT_CODES[lower]
-  // Try substring match — longest city name wins
-  const entries = Object.entries(AIRPORT_CODES).sort((a, b) => b[0].length - a[0].length)
-  for (const [city, code] of entries) {
-    if (lower.includes(city)) return code
+async function getChannelName(channelId: string): Promise<string> {
+  try {
+    const data = await slackGet("conversations.info", { channel: channelId })
+    return `#${data.channel?.name ?? "travel"}`
+  } catch {
+    return "#travel"
   }
-  return undefined
 }
 
-function extractRoute(text: string): { route: string; origin?: string; destination?: string } {
-  // Explicit IATA codes: BOG → MIA
-  const explicit = text.match(/\b([A-Z]{3})\s*[→\-]\s*([A-Z]{3})\b/i)
-  if (explicit) {
-    const o = explicit[1].toUpperCase()
-    const d = explicit[2].toUpperCase()
-    return { route: `${o} → ${d}`, origin: o, destination: d }
+async function getThreadHistory(channelId: string, threadTs: string) {
+  try {
+    const data = await slackGet("conversations.replies", {
+      channel: channelId,
+      ts: threadTs,
+      limit: "10",
+    })
+    const messages: any[] = data.messages ?? []
+    return messages
+      .filter((m) => m.ts !== threadTs)
+      .slice(-8)
+      .map((m) => ({
+        role: (m.bot_id ? "assistant" : "user") as "user" | "assistant",
+        content: m.text ?? "",
+      }))
+  } catch {
+    return []
   }
-
-  // "de X a Y" / "from X to Y" pattern — strip commas before matching
-  const cleaned = text.replace(/,/g, " ")
-  const deA = cleaned.match(
-    /(?:de|from)\s+([a-záéíóúñ\s]+?)\s+(?:a|to)\s+([a-záéíóúñ\s]+?)(?:\s+el|\s+on|\s+the|\s+este|\s+en|\s*$)/i
-  )
-  if (deA) {
-    const originCity = deA[1].trim()
-    const destCity = deA[2].trim()
-    const originCode = findCode(originCity)
-    const destCode = findCode(destCity)
-    if (originCode && destCode) return { route: `${originCode} → ${destCode}`, origin: originCode, destination: destCode }
-    if (destCode) return { route: `? → ${destCode}`, destination: destCode }
-    if (originCode) return { route: `${originCode} → ?`, origin: originCode }
-  }
-
-  // "ir a / going to" pattern
-  const dest = text.match(
-    /(?:ir a|volar a|viajar a|going to|flight to|voy a)\s+([a-záéíóúñ\s]+?)(?:\s+el|\s+on|\s+the|\s+from|\s*,|\.|\s*$)/i
-  )
-  if (dest) {
-    const city = dest[1].trim().toLowerCase()
-    const code = AIRPORT_CODES[city]
-    if (code) return { route: `? → ${code}`, destination: code }
-  }
-
-  const words = text.toLowerCase()
-  for (const [city, code] of Object.entries(AIRPORT_CODES)) {
-    if (words.includes(city)) return { route: `? → ${code}`, destination: code }
-  }
-  return { route: "? → ?" }
 }
 
-function extractDates(text: string): string | undefined {
-  const months: Record<string, string> = {
-    enero: "Jan", january: "Jan", jan: "Jan",
-    febrero: "Feb", february: "Feb", feb: "Feb",
-    marzo: "Mar", march: "Mar", mar: "Mar",
-    abril: "Apr", april: "Apr", apr: "Apr",
-    mayo: "May", may: "May",
-    junio: "Jun", june: "Jun", jun: "Jun",
-    julio: "Jul", july: "Jul", jul: "Jul",
-    agosto: "Aug", august: "Aug", aug: "Aug",
-    septiembre: "Sep", september: "Sep", sep: "Sep",
-    octubre: "Oct", october: "Oct", oct: "Oct",
-    noviembre: "Nov", november: "Nov", nov: "Nov",
-    diciembre: "Dec", december: "Dec", dec: "Dec",
+async function downloadSlackFile(url: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
+    })
+    const buffer = await res.arrayBuffer()
+    const base64 = Buffer.from(buffer).toString("base64")
+    const mimeType = res.headers.get("content-type") ?? "image/jpeg"
+    return { data: base64, mimeType }
+  } catch {
+    return null
   }
-  const monthNames = Object.keys(months).join("|")
-  const match = text.match(
-    new RegExp(`(\\d{1,2})\\s+(?:de\\s+)?(${monthNames})(?:\\s+(?:al?|to|-|–)\\s+(\\d{1,2}))?`, "i")
-  )
-  if (match) {
-    const start = match[1]
-    const month = months[match[2].toLowerCase()] ?? match[2]
-    return match[3] ? `${month} ${start}–${match[3]}` : `${month} ${start}`
-  }
-  return undefined
-}
-
-function isTravelRequest(text: string): boolean {
-  const keywords = [
-    "vuelo", "volar", "viajar", "viaje", "ir a", "vamos a",
-    "necesito ir", "necesito viajar", "flight", "fly", "travel", "trip",
-    "quiero ir", "quiero viajar", "reservar", "book",
-  ]
-  const lower = text.toLowerCase()
-  return keywords.some((k) => lower.includes(k))
 }
 
 function getInitials(name: string): string {
   return name.split(" ").slice(0, 2).map((n) => n[0]?.toUpperCase() ?? "").join("")
 }
 
-// ─── Background: search Duffel + update trip ──────────────────────────────────
+// ─── Background: search Duffel + update trip ─────────────────────────────────
 
 async function searchAndUpdateTrip(
   trip: StoredTrip,
   origin: string | undefined,
   destination: string | undefined,
-  slackChannelId: string,
-  slackTs: string
-): Promise<void> {
-  if (!origin || !destination || origin === "?" || destination === "?") return
-
-  const departureDate = parseTripDateToISO(trip.dates)
-  if (!departureDate) return
+  departureDate: string | undefined,
+  passengers: number,
+  cabinClass: string,
+  channelId: string,
+  threadTs: string
+) {
+  if (!destination || !departureDate) return
 
   try {
     const offers = await searchFlights({
-      origin,
+      origin: origin ?? "BOG",
       destination,
       departureDate,
-      passengers: trip.travelers.length,
+      passengers,
+      cabinClass: cabinClass as any,
     })
 
     if (offers.length === 0) {
-      await postSlackReply(
-        slackChannelId, slackTs,
-        `⚠️ No flights found for *${origin} → ${destination}* on *${departureDate}*. Try a different date or route.`
+      await postSlackReply(channelId, threadTs,
+        `⚠️ No encontré vuelos disponibles para *${origin ?? "??"} → ${destination}* el *${departureDate}*. Prueba otra fecha.`
       )
       return
     }
 
     const options = offersToTripOptions(offers)
-    await updateTrip(trip.id, { status: "awaiting", options })
+    await updateTrip(trip.id, { status: "awaiting", options, route: `${origin ?? "?"} → ${destination}` })
 
-    // Format top 3 options for Slack reply
-    const topThree = offers.slice(0, 3)
-    const lines = topThree.map(
-      (o, i) =>
-        `${i === 0 ? "✈️ *Best price*" : `${i + 1}.`} *${o.airline} ${o.flightNumber}* — $${Math.round(o.price)} · ${o.stops === 0 ? "Nonstop" : `${o.stops} stop`}`
+    const lines = offers.slice(0, 3).map((o, i) =>
+      `${i === 0 ? "✅ *Mejor precio*" : `${i + 1}.`} *${o.airline} ${o.flightNumber}* — $${Math.round(o.price)} · ${o.stops === 0 ? "Directo" : `${o.stops} escala`} · ${o.duration}`
     )
 
-    await postSlackReply(
-      slackChannelId,
-      slackTs,
-      `Found *${offers.length} options* for *${origin} → ${destination}*:\n\n${lines.join("\n")}\n\n👉 Review and approve in the Eba dashboard.`
+    await postSlackReply(channelId, threadTs,
+      `🔍 Encontré *${offers.length} opciones* para *${origin ?? "?"} → ${destination}*:\n\n${lines.join("\n")}\n\n👉 Revisa y aprueba en el *dashboard de Eba*.`
     )
   } catch (err) {
-    console.error("[searchAndUpdateTrip] Duffel error:", err)
-    await postSlackReply(
-      slackChannelId, slackTs,
-      `⚠️ Had trouble searching flights right now. I'll retry shortly.`
+    console.error("[searchAndUpdateTrip]", err)
+    await postSlackReply(channelId, threadTs,
+      `⚠️ Tuve un problema buscando vuelos. Intenta de nuevo en un momento.`
     )
   }
 }
@@ -271,7 +158,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const payload = JSON.parse(body)
 
-  // URL verification challenge
   if (payload.type === "url_verification") {
     return NextResponse.json({ challenge: payload.challenge })
   }
@@ -281,52 +167,101 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const event = payload.event
-  if (event?.type !== "message" || event?.subtype || event?.bot_id) {
+  // Ignore bot messages and edited messages
+  if (!event || event.subtype || event.bot_id || event.hidden) {
     return NextResponse.json({ ok: true })
   }
 
-  const text: string = event.text ?? ""
-  if (!isTravelRequest(text)) {
+  // Only handle message events
+  if (event.type !== "message") {
     return NextResponse.json({ ok: true })
   }
 
-  // Fetch user + channel in parallel
-  const [user, channelName] = await Promise.all([
-    getSlackUser(event.user),
-    getChannelName(event.channel),
+  const text: string = (event.text ?? "").trim()
+  const channelId: string = event.channel
+  const userId: string = event.user
+  const messageTs: string = event.ts
+  const threadTs: string = event.thread_ts ?? event.ts
+  const isDM: boolean = event.channel_type === "im"
+  const isMentioned: boolean = text.includes(`<@${payload.authorizations?.[0]?.user_id}>`)
+
+  // Get image attachment if any
+  const imageFile = event.files?.find((f: any) =>
+    f.mimetype?.startsWith("image/")
+  )
+
+  // In channels: only respond if mentioned, or if it's a new message (not a reply)
+  // In DMs: always respond
+  const shouldProcess = isDM || isMentioned || !event.thread_ts
+
+  if (!shouldProcess && !imageFile) {
+    return NextResponse.json({ ok: true })
+  }
+
+  // Respond immediately to Slack (within 3s requirement)
+  const [userName, channelName, threadHistory] = await Promise.all([
+    getSlackUserName(userId),
+    isDM ? Promise.resolve("DM") : getChannelName(channelId),
+    event.thread_ts ? getThreadHistory(channelId, threadTs) : Promise.resolve([]),
   ])
 
-  const { route, origin, destination } = extractRoute(text)
-  const dates = extractDates(text)
-
-  const trip: StoredTrip = {
-    id: `${event.ts}-${event.user}`,
-    slackMessageTs: event.ts,
-    slackChannelId: event.channel,
-    slackUserId: event.user,
-    slackUserName: user.name,
-    quote: text,
-    channel: channelName,
-    status: "searching",
-    route,
-    dates,
-    travelers: [{ initials: getInitials(user.name), name: user.name }],
-    createdAt: Math.floor(parseFloat(event.ts) * 1000),
+  // Download image if present
+  let imageData: { data: string; mimeType: string } | undefined
+  if (imageFile?.url_private) {
+    imageData = await downloadSlackFile(imageFile.url_private) ?? undefined
   }
 
-  await addTrip(trip)
-
-  // Immediate Slack reply — responds within Slack's 3-second window
-  await postSlackReply(
-    event.channel,
-    event.ts,
-    `✈️ Got it! Searching the best options for *${route}*${dates ? ` on *${dates}*` : ""}…`
+  // Analyze with Claude AI
+  const intent = await analyzeMessage(
+    text,
+    threadHistory,
+    imageData?.data,
+    imageData?.mimeType
   )
 
-  // Search Duffel AFTER the response is sent (non-blocking)
-  after(() =>
-    searchAndUpdateTrip(trip, origin, destination, event.channel, event.ts)
-  )
+  // If not travel related and not in DM, ignore silently
+  if (intent.action === "not_travel" && !isDM) {
+    return NextResponse.json({ ok: true })
+  }
+
+  // Post Claude's response to Slack
+  await postSlackReply(channelId, threadTs, intent.message)
+
+  // If Claude wants to search flights, do it in background
+  if (intent.action === "search" && intent.flightParams?.destination) {
+    const fp = intent.flightParams
+    const departureDate = fp.departureDate ?? parseTripDateToISO(undefined)
+
+    const trip: StoredTrip = {
+      id: `${messageTs}-${userId}`,
+      slackMessageTs: messageTs,
+      slackChannelId: channelId,
+      slackUserId: userId,
+      slackUserName: userName,
+      quote: text || (imageFile ? "[flight screenshot]" : ""),
+      channel: channelName,
+      status: "searching",
+      route: `${fp.origin ?? "?"} → ${fp.destination}`,
+      dates: fp.departureDate,
+      travelers: [{ initials: getInitials(userName), name: userName }],
+      createdAt: Math.floor(parseFloat(messageTs) * 1000),
+    }
+
+    await addTrip(trip)
+
+    after(() =>
+      searchAndUpdateTrip(
+        trip,
+        fp.origin,
+        fp.destination!,
+        departureDate,
+        fp.passengers ?? 1,
+        fp.cabinClass ?? "economy",
+        channelId,
+        threadTs
+      )
+    )
+  }
 
   return NextResponse.json({ ok: true })
 }
