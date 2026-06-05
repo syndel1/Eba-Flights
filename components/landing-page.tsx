@@ -217,25 +217,20 @@ export function LandingPage() {
         backgroundSize: "36px 36px"
       }}
     >
-      {/* Custom Cursor - Premium Filled Airplane */}
+      {/* Custom Cursor - simple dot */}
       <div
         ref={cursorRef}
         className="fixed top-0 left-0 pointer-events-none z-[9999]"
-        style={{ marginLeft: "-16px", marginTop: "-16px" }}
+        style={{ marginLeft: "-4px", marginTop: "-4px" }}
       >
-        <div 
-          className="transition-all duration-200"
+        <div
+          className="rounded-full bg-[#0043F1] transition-all duration-150"
           style={{
-            width: isHoveringClickable ? "38px" : "32px",
-            height: isHoveringClickable ? "38px" : "32px",
-            transform: "rotate(45deg)",
-            filter: isHoveringClickable ? "drop-shadow(0 0 6px #0043F1)" : "none",
+            width:  isHoveringClickable ? "12px" : "7px",
+            height: isHoveringClickable ? "12px" : "7px",
+            boxShadow: isHoveringClickable ? "0 0 10px rgba(0,67,241,0.5)" : "none",
           }}
-        >
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ width: "100%", height: "100%" }}>
-            <path d="M21 16V14L13 9V3.5C13 2.67 12.33 2 11.5 2C10.67 2 10 2.67 10 3.5V9L2 14V16L10 13.5V19L8 20.5V22L11.5 21L15 22V20.5L13 19V13.5L21 16Z" fill="#0043F1" stroke="white" strokeWidth="1.5"/>
-          </svg>
-        </div>
+        />
       </div>
 
       {/* Page Transition Overlay */}
