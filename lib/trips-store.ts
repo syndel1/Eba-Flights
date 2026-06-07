@@ -124,6 +124,16 @@ export async function getTripById(id: string): Promise<StoredTrip | null> {
   return rows[0] ? fromRow(rows[0]) : null
 }
 
+export async function getTripByMessageTs(messageTs: string): Promise<StoredTrip | null> {
+  const res = await fetch(
+    `${BASE()}/rest/v1/trips?slack_message_ts=eq.${encodeURIComponent(messageTs)}&limit=1`,
+    { headers: headers() }
+  )
+  if (!res.ok) return null
+  const rows: any[] = await res.json()
+  return rows[0] ? fromRow(rows[0]) : null
+}
+
 export async function updateTrip(id: string, updates: Partial<StoredTrip>): Promise<boolean> {
   const row: any = {}
   if (updates.status     !== undefined) row.status      = updates.status
