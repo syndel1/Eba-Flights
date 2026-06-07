@@ -336,7 +336,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // ── Traveler update (phone/email after passport) ─────────────────────────
       if (intent.action === "traveler_update" && intent.travelerUpdate?.identifier) {
         const tu = intent.travelerUpdate
-        const traveler = await findTravelerByName(tu.identifier)
+        const traveler = await findTravelerByName(tu.identifier!)
         if (traveler?.id) {
           await updateTravelerById(traveler.id, {
             ...(tu.phone && { phone: tu.phone }),
@@ -368,15 +368,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // ── Not travel → ignore in channels, answer in DMs ──────────────────────
       if (intent.action === "not_travel" && !isDM) return
 
-      // ── Conversational reply ─────────────────────────────────────────────────
-      await postSlackReply(channelId, threadTs, intent.message)
-
       // ── Search flights ───────────────────────────────────────────────────────
       if (intent.action === "search" && intent.flightParams?.destination) {
         const fp = intent.flightParams
         const departureDate = fp.departureDate ?? parseTripDateToISO(undefined)
-
         const travelerDisplay = fp.travelerName ?? userName
+
         const trip: StoredTrip = {
           id: `${messageTs}-${userId}`,
           slackMessageTs: messageTs,
@@ -393,11 +390,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
 
         await addTrip(trip)
-        await searchAndUpdateTrip(
-          trip, fp.origin, fp.destination!, departureDate,
-          fp.passengers ?? 1, fp.cabinClass ?? "economy", channelId, threadTs
-        )
+
+        if (imageFile) {
+          // Screenshot: Claude already extracted the details — skip Duffel search,
+          // set trip to awaiting and wait for Felipe's approval before searching.
+          await updateTrip(trip.id, { status: "awaiting" })
+          await postSlackReply(channelId, threadTs, intent.message)
+        } else {
+          // Text request: post Claude's reply then search Duffel immediately.
+          await postSlackReply(channelId, threadTs, intent.message)
+          await searchAndUpdateTrip(
+            trip, fp.origin, fp.destination!, departureDate,
+            fp.passengers ?? 1, fp.cabinClass ?? "economy", channelId, threadTs
+          )
+        }
+        return
       }
+
+      // ── Conversational reply ─────────────────────────────────────────────────
+      await postSlackReply(channelId, threadTs, intent.message)
     } catch (err) {
       console.error("[slack/events after()]", err)
     }
