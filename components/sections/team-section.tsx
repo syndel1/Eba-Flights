@@ -49,7 +49,7 @@ interface TeamMember {
 
 const teamMembers: TeamMember[] = [
   { id: 1,  legalName: "Camila Sayuri Zancanella",      firstName: "Camila Sayuri",   lastName: "Zancanella",       email: "camila@domu.ai",    phone: "", dateOfBirth: "", country: "Brazil",        gender: "f", initials: "CZ", role: "COO & Co-founder" },
-  { id: 2,  legalName: "Nicolas Felipe Diaz Rodriguez", firstName: "Nicolas Felipe",  lastName: "Diaz Rodriguez",   email: "nicolas@domu.ai",   phone: "", dateOfBirth: "", country: "Colombia",      gender: "m", initials: "ND", role: "CEO & Founder" },
+  { id: 2,  legalName: "Nicolas Felipe Diaz Rodriguez", firstName: "Nicolas Felipe",  lastName: "Diaz Rodriguez",   email: "nicolas@domu.ai",   phone: "(954) 445-3188", dateOfBirth: "2000-04-27", country: "Colombia",      gender: "m", initials: "ND", role: "CEO & Founder" },
   { id: 3,  legalName: "Robert Choate",                 firstName: "Robert",          lastName: "Choate",           email: "isaac@domu.ai",     phone: "", dateOfBirth: "", country: "United States", gender: "m", initials: "IC" },
   { id: 4,  legalName: "Aidan Connors",                 firstName: "Aidan",           lastName: "Connors",          email: "aidan@domu.ai",     phone: "", dateOfBirth: "", country: "United States", gender: "m", initials: "AC" },
   { id: 5,  legalName: "Ashley Jinju Jung",             firstName: "Ashley Jinju",    lastName: "Jung",             email: "ashley@domu.ai",    phone: "", dateOfBirth: "", country: "United States", gender: "f", initials: "AJ" },
@@ -75,6 +75,7 @@ const teamMembers: TeamMember[] = [
   { id: 25, legalName: "Lucas Kenji Zancanella",        firstName: "Lucas Kenji",     lastName: "Zancanella",       email: "lucas@domu.ai",     phone: "", dateOfBirth: "", country: "Brazil",        gender: "m", initials: "LZ" },
   { id: 26, legalName: "Marco Antonio Lopez",           firstName: "Marco Antonio",   lastName: "Lopez",            email: "marco@domu.ai",     phone: "", dateOfBirth: "", country: "Mexico",        gender: "m", initials: "ML" },
   { id: 27, legalName: "Miguel Rios Olaya",             firstName: "Miguel",          lastName: "Rios Olaya",       email: "miguel@domu.ai",    phone: "", dateOfBirth: "", country: "Colombia",      gender: "m", initials: "MR" },
+  { id: 28, legalName: "Sophia Rogoff",                firstName: "Sophia",           lastName: "Rogoff",           email: "sophierogoff@gmail.com", phone: "(630) 731-9569", dateOfBirth: "2002-04-10", country: "United States", gender: "f", initials: "SR" },
 ]
 
 const COUNTRY_FLAGS: Record<string, string> = {
