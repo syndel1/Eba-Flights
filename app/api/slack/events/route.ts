@@ -186,12 +186,55 @@ async function handleApproval(
   const trip = await getTripByMessageTs(threadTs)
   if (!trip || trip.status !== "awaiting") return
 
-  const offerId = trip.options?.[0]?.id
+  let offerId = trip.options?.[0]?.id
+
+  // No stored offer (came from a screenshot) — search Duffel now for real price
   if (!offerId) {
+    const parts = (trip.route ?? "").split("→").map((s) => s.trim())
+    const origin = parts[0] || "BOG"
+    const destination = parts[1]
+    const departureDate = trip.dates
+
+    if (!destination || !departureDate) {
+      await postSlackReply(channelId, threadTs,
+        "⚠️ No pude determinar la ruta completa. ¿Me confirmas origen, destino y fecha?"
+      )
+      return
+    }
+
     await postSlackReply(channelId, threadTs,
-      "⚠️ La oferta expiró. Busca el vuelo de nuevo para obtener precios actualizados."
+      `✅ Aprobado por *${approverName}*. Consultando precio actual para *${origin} → ${destination}*...`
     )
-    return
+
+    try {
+      const offers = await searchFlights({
+        origin,
+        destination,
+        departureDate,
+        passengers: 1,
+        cabinClass: "economy",
+      })
+
+      if (offers.length === 0) {
+        await postSlackReply(channelId, threadTs,
+          `⚠️ No encontré vuelos disponibles para *${origin} → ${destination}* el *${departureDate}*. La ruta puede no estar en nuestro proveedor en esta fecha.`
+        )
+        return
+      }
+
+      const best = offers[0]
+      offerId = best.id
+      await updateTrip(trip.id, { options: offersToTripOptions(offers) })
+
+      await postSlackReply(channelId, threadTs,
+        `💰 Precio actual: *${best.airline} ${best.flightNumber}* — *$${Math.round(best.price)} USD* · ${best.stops === 0 ? "Directo" : `${best.stops} escala`} · ${best.duration}\n\nProcediendo con el booking...`
+      )
+    } catch (err: any) {
+      await postSlackReply(channelId, threadTs,
+        `⚠️ Error consultando vuelos: ${err.message}`
+      )
+      return
+    }
   }
 
   const travelerName = trip.travelers?.[0]?.name
