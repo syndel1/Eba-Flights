@@ -100,30 +100,35 @@ function getInitials(name: string): string {
   return name.split(" ").slice(0, 2).map((n) => n[0]?.toUpperCase() ?? "").join("")
 }
 
-// ─── Resolve passenger data (employees list + travelers DB) ──────────────────
+// ─── Look up a traveler in Supabase then employees.ts ─────────────────────────
 
-async function resolvePassenger(
-  slackUserName: string,
-  slackUserId: string,
-  travelerName?: string
-) {
-  // If booking for a named third party, search travelers DB first
-  if (travelerName) {
-    const traveler = await findTravelerByName(travelerName)
-    if (traveler) {
-      return {
-        firstName: traveler.first_name ?? travelerName.split(" ")[0],
-        lastName: traveler.last_name ?? travelerName.split(" ").slice(-1)[0],
-        email: traveler.email ?? "",
-        dateOfBirth: traveler.date_of_birth ?? "1990-01-01",
-        gender: ("m" as "m" | "f"),
-      }
+async function resolvePassenger(name: string, slackUserId?: string) {
+  // 1. Supabase travelers table (real passport data, trials included)
+  const traveler = await findTravelerByName(name)
+  if (traveler) {
+    return {
+      firstName: traveler.first_name ?? name.split(" ")[0],
+      lastName: traveler.last_name ?? name.split(" ").slice(-1)[0],
+      email: traveler.email ?? "",
+      dateOfBirth: traveler.date_of_birth ?? "1990-01-01",
+      gender: ("m" as "m" | "f"),
+      passportNumber: traveler.passport_number,
+      passportExpiry: traveler.expiry_date,
+      nationality: traveler.nationality,
     }
   }
 
-  // Try employees list by Slack real name or user ID
-  const employee = findEmployee(slackUserName) ?? findEmployee(slackUserId)
-  if (employee) return employeeToPassenger(employee)
+  // 2. Hardcoded employees list (has DOB, no passport)
+  const employee =
+    findEmployee(name) ?? (slackUserId ? findEmployee(slackUserId) : undefined)
+  if (employee) {
+    return {
+      ...employeeToPassenger(employee),
+      passportNumber: undefined as string | undefined,
+      passportExpiry: undefined as string | undefined,
+      nationality: employee.country,
+    }
+  }
 
   return null
 }
@@ -176,19 +181,15 @@ async function searchAndUpdateTrip(
   }
 }
 
-// ─── Handle approval → book ───────────────────────────────────────────────────
+// ─── Handle approval → search Duffel (if needed) → book ──────────────────────
 
-async function handleApproval(
-  channelId: string,
-  threadTs: string,
-  approverName: string
-) {
+async function handleApproval(channelId: string, threadTs: string, approverName: string) {
   const trip = await getTripByMessageTs(threadTs)
   if (!trip || trip.status !== "awaiting") return
 
   let offerId = trip.options?.[0]?.id
 
-  // No stored offer (came from a screenshot) — search Duffel now for real price
+  // No stored offer (screenshot trip) — search Duffel now for real current price
   if (!offerId) {
     const parts = (trip.route ?? "").split("→").map((s) => s.trim())
     const origin = parts[0] || "BOG"
@@ -217,7 +218,7 @@ async function handleApproval(
 
       if (offers.length === 0) {
         await postSlackReply(channelId, threadTs,
-          `⚠️ No encontré vuelos disponibles para *${origin} → ${destination}* el *${departureDate}*. La ruta puede no estar en nuestro proveedor en esta fecha.`
+          `⚠️ No encontré vuelos disponibles para *${origin} → ${destination}* el *${departureDate}*. La ruta puede no estar disponible en este momento.`
         )
         return
       }
@@ -227,37 +228,32 @@ async function handleApproval(
       await updateTrip(trip.id, { options: offersToTripOptions(offers) })
 
       await postSlackReply(channelId, threadTs,
-        `💰 Precio actual: *${best.airline} ${best.flightNumber}* — *$${Math.round(best.price)} USD* · ${best.stops === 0 ? "Directo" : `${best.stops} escala`} · ${best.duration}\n\nProcediendo con el booking...`
+        `💰 Precio actual: *${best.airline} ${best.flightNumber}* — *$${Math.round(best.price)} USD* · ${best.stops === 0 ? "Directo" : `${best.stops} escala`} · ${best.duration}\n\nBookeando...`
       )
     } catch (err: any) {
-      await postSlackReply(channelId, threadTs,
-        `⚠️ Error consultando vuelos: ${err.message}`
-      )
+      await postSlackReply(channelId, threadTs, `⚠️ Error consultando vuelos: ${err.message}`)
       return
     }
   }
 
-  const travelerName = trip.travelers?.[0]?.name
-  const passenger = await resolvePassenger(trip.slackUserName, trip.slackUserId, travelerName)
+  // Resolve full passenger data from DB
+  const travelerName = trip.travelers?.[0]?.name ?? trip.slackUserName
+  const passenger = await resolvePassenger(travelerName, trip.slackUserId)
 
-  if (!passenger || !passenger.dateOfBirth) {
+  if (!passenger) {
     await postSlackReply(channelId, threadTs,
-      "⚠️ No encontré los datos completos del pasajero. ¿Me confirmas su email en Domu?"
+      `⚠️ No encontré los datos de *${travelerName}* en la base de datos. ¿Me confirmas su email o pasaporte?`
     )
     return
   }
 
-  await postSlackReply(channelId, threadTs,
-    `✈️ Aprobado por *${approverName}*. Bookeando vuelo para *${passenger.firstName} ${passenger.lastName}*...`
-  )
-
   try {
-    const { orderId, bookingRef } = await bookFlight(offerId, [passenger])
+    const { orderId, bookingRef } = await bookFlight(offerId!, [passenger])
 
     await updateTrip(trip.id, { status: "booked", bookedInfo: bookingRef })
     await createBooking({
       trip_id: trip.id,
-      offer_id: offerId,
+      offer_id: offerId!,
       pnr: bookingRef,
       duffel_order_id: orderId,
       traveler_name: `${passenger.firstName} ${passenger.lastName}`,
@@ -269,10 +265,10 @@ async function handleApproval(
     })
 
     await postSlackReply(channelId, threadTs,
-      `✅ *¡Vuelo confirmado!*\n\n🎫 *Referencia:* \`${bookingRef}\`\n✈️ *Ruta:* ${trip.route ?? ""}\n👤 *Pasajero:* ${passenger.firstName} ${passenger.lastName}\n\n_Eba hará el check-in automáticamente 24 horas antes del vuelo._`
+      `✅ *¡Vuelo confirmado!*\n\n🎫 *Referencia:* \`${bookingRef}\`\n✈️ *Ruta:* ${trip.route ?? ""}\n👤 *Pasajero:* ${passenger.firstName} ${passenger.lastName}\n${passenger.passportNumber ? `📋 *Pasaporte:* ${passenger.passportNumber}\n` : ""}\n_Eba hará el check-in automáticamente 24 horas antes del vuelo._`
     )
   } catch (err: any) {
-    console.error("[handleApproval]", err)
+    console.error("[handleApproval booking]", err)
     await postSlackReply(channelId, threadTs,
       `⚠️ Error al confirmar el booking: ${err.message ?? "intenta de nuevo."}`
     )
@@ -284,9 +280,7 @@ async function handleApproval(
 async function handleCheckCredits(channelId: string, threadTs: string) {
   const credits = await getActiveCredits()
   if (credits.length === 0) {
-    await postSlackReply(channelId, threadTs,
-      "💳 No hay créditos de viaje disponibles actualmente."
-    )
+    await postSlackReply(channelId, threadTs, "💳 No hay créditos de viaje disponibles actualmente.")
     return
   }
   const lines = credits.map((c) =>
@@ -390,7 +384,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return
       }
 
-      // ── Approval → book flight ───────────────────────────────────────────────
+      // ── Approval → search Duffel (if needed) → book ─────────────────────────
       if (intent.action === "approve" && isThreadReply) {
         await handleApproval(channelId, threadTs, userName)
         return
@@ -402,7 +396,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return
       }
 
-      // ── Cancellation (V2) ────────────────────────────────────────────────────
+      // ── Cancellation ─────────────────────────────────────────────────────────
       if (intent.action === "cancel_booking") {
         await postSlackReply(channelId, threadTs, intent.message)
         return
@@ -411,11 +405,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // ── Not travel → ignore in channels, answer in DMs ──────────────────────
       if (intent.action === "not_travel" && !isDM) return
 
-      // ── Search flights ───────────────────────────────────────────────────────
-      if (intent.action === "search" && intent.flightParams?.destination) {
+      // ── Search: screenshot with no traveler → just ask "¿Para quién?" ────────
+      if (intent.action === "search" && imageFile && !intent.flightParams?.travelerName) {
+        // Claude extracted flight details but doesn't know who it's for.
+        // Post Eba's message (which asks "¿Para quién es este vuelo?") and wait.
+        await postSlackReply(channelId, threadTs, intent.message)
+        return
+      }
+
+      // ── Search: we have flight + traveler name → look up DB, confirm, tag Felipe
+      if (intent.action === "search" && intent.flightParams?.destination && intent.flightParams?.travelerName) {
         const fp = intent.flightParams
-        const departureDate = fp.departureDate ?? parseTripDateToISO(undefined)
-        const travelerDisplay = fp.travelerName ?? userName
+        const travelerName = fp.travelerName!
+        const passenger = await resolvePassenger(travelerName, userId)
+
+        const departureDate = fp.departureDate ?? parseTripDateToISO(undefined) ?? ""
 
         const trip: StoredTrip = {
           id: `${messageTs}-${userId}`,
@@ -425,33 +429,70 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           slackUserName: userName,
           quote: text || (imageFile ? "[flight screenshot]" : ""),
           channel: channelName,
-          status: "searching",
+          status: "awaiting",
           route: `${fp.origin ?? "?"} → ${fp.destination}`,
-          dates: fp.departureDate,
-          travelers: [{ initials: getInitials(travelerDisplay), name: travelerDisplay }],
+          dates: departureDate,
+          travelers: [{ initials: getInitials(travelerName), name: travelerName }],
           createdAt: Math.floor(parseFloat(messageTs) * 1000),
         }
 
         await addTrip(trip)
 
-        if (imageFile) {
-          // Screenshot: Claude already extracted the details — skip Duffel search,
-          // set trip to awaiting and wait for Felipe's approval before searching.
-          await updateTrip(trip.id, { status: "awaiting" })
-          await postSlackReply(channelId, threadTs, intent.message)
-        } else {
-          // Text request: post Claude's reply then search Duffel immediately.
-          await postSlackReply(channelId, threadTs, intent.message)
-          await searchAndUpdateTrip(
-            trip, fp.origin, fp.destination!, departureDate,
-            fp.passengers ?? 1, fp.cabinClass ?? "economy", channelId, threadTs
+        if (!passenger) {
+          // Traveler not in DB — inform and ask for their passport
+          await postSlackReply(channelId, threadTs,
+            `⚠️ No encontré a *${travelerName}* en la base de datos.\n\n¿Puedes enviarme una foto de su pasaporte para crear su perfil?`
           )
+          return
         }
+
+        // Confirm traveler data + tag Felipe for approval
+        const passportLine = passenger.passportNumber
+          ? `📋 Pasaporte: \`${passenger.passportNumber}\` · Vence: ${passenger.passportExpiry ?? "n/a"}\n`
+          : ""
+        const dobLine = `🎂 DOB: ${passenger.dateOfBirth}\n`
+
+        await postSlackReply(channelId, threadTs,
+          `✅ *${passenger.firstName} ${passenger.lastName}* encontrado/a en la base de datos.\n${dobLine}${passportLine}\n` +
+          `✈️ *${fp.origin ?? "?"} → ${fp.destination}* · ${departureDate}\n\n` +
+          `¿Aprobamos este vuelo? — *Felipe C.*`
+        )
+        return
+      }
+
+      // ── Search: text request (no image, no traveler name = booking for sender) ─
+      if (intent.action === "search" && intent.flightParams?.destination) {
+        const fp = intent.flightParams
+        const departureDate = fp.departureDate ?? parseTripDateToISO(undefined) ?? ""
+        const travelerDisplay = fp.travelerName ?? userName
+
+        const trip: StoredTrip = {
+          id: `${messageTs}-${userId}`,
+          slackMessageTs: messageTs,
+          slackChannelId: channelId,
+          slackUserId: userId,
+          slackUserName: userName,
+          quote: text,
+          channel: channelName,
+          status: "searching",
+          route: `${fp.origin ?? "?"} → ${fp.destination}`,
+          dates: departureDate,
+          travelers: [{ initials: getInitials(travelerDisplay), name: travelerDisplay }],
+          createdAt: Math.floor(parseFloat(messageTs) * 1000),
+        }
+
+        await addTrip(trip)
+        await postSlackReply(channelId, threadTs, intent.message)
+        await searchAndUpdateTrip(
+          trip, fp.origin, fp.destination!, departureDate,
+          fp.passengers ?? 1, fp.cabinClass ?? "economy", channelId, threadTs
+        )
         return
       }
 
       // ── Conversational reply ─────────────────────────────────────────────────
       await postSlackReply(channelId, threadTs, intent.message)
+
     } catch (err) {
       console.error("[slack/events after()]", err)
     }

@@ -43,8 +43,11 @@ export interface PassengerInfo {
   firstName: string
   lastName: string
   email: string
-  dateOfBirth: string    // "YYYY-MM-DD"
+  dateOfBirth: string      // "YYYY-MM-DD"
   gender: "m" | "f"
+  passportNumber?: string
+  passportExpiry?: string  // "YYYY-MM-DD"
+  nationality?: string     // ISO 3166-1 alpha-2, e.g. "CO", "BO", "US"
 }
 
 // ─── Duration helpers ─────────────────────────────────────────────────────────
@@ -214,6 +217,14 @@ export async function bookFlight(
           born_on: p.dateOfBirth,
           gender: p.gender,
           type: "adult",
+          ...(p.passportNumber && {
+            identity_documents: [{
+              type: "passport",
+              number: p.passportNumber,
+              ...(p.passportExpiry && { expires_on: p.passportExpiry }),
+              ...(p.nationality && { issuing_country_code: p.nationality }),
+            }],
+          }),
         })),
         payments: [{ type: "balance", currency: "USD", amount: "0" }],
       },
