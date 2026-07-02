@@ -15,7 +15,7 @@ export interface Employee {
 
 export const employees: Employee[] = [
   { initials: "CZ", displayName: "Camila Z.", legalName: "Camila Sayuri Zancanella",    firstName: "Camila Sayuri", lastName: "Zancanella",        email: "camila@domu.ai",    country: "BR", dateOfBirth: "1995-03-15", gender: "f" },
-  { initials: "ND", displayName: "Nick D.",   legalName: "Nicolas Felipe Diaz Rodriguez", firstName: "Nicolas Felipe", lastName: "Diaz Rodriguez",  email: "nicolas@domu.ai",   country: "CO", dateOfBirth: "1992-07-22", gender: "m" },
+  { initials: "ND", displayName: "Nick D.",   legalName: "Nicolas Felipe Diaz Rodriguez", firstName: "Nicolas Felipe", lastName: "Diaz Rodriguez",  email: "nicolas@domu.ai",   country: "CO", dateOfBirth: "2000-04-27", gender: "m" },
   { initials: "IC", displayName: "Isaac C.",  legalName: "Robert Choate",               firstName: "Robert",        lastName: "Choate",            email: "isaac@domu.ai",     country: "US", dateOfBirth: "1994-11-05", gender: "m" },
   { initials: "AC", displayName: "Aidan C.",  legalName: "Aidan Connors",               firstName: "Aidan",         lastName: "Connors",           email: "aidan@domu.ai",     country: "US", dateOfBirth: "1996-04-18", gender: "m" },
   { initials: "AJ", displayName: "Ashley J.", legalName: "Ashley Jinju Jung",           firstName: "Ashley Jinju",  lastName: "Jung",              email: "ashley@domu.ai",    country: "US", dateOfBirth: "1993-09-30", gender: "f" },
@@ -41,17 +41,34 @@ export const employees: Employee[] = [
   { initials: "LZ", displayName: "Lucas Z.",  legalName: "Lucas Kenji Zancanella",      firstName: "Lucas Kenji",   lastName: "Zancanella",        email: "lucas@domu.ai",     country: "BR", dateOfBirth: "1997-11-07", gender: "m" },
   { initials: "ML", displayName: "Marco L.",  legalName: "Marco Antonio Lopez",         firstName: "Marco Antonio", lastName: "Lopez",             email: "marco@domu.ai",     country: "MX", dateOfBirth: "1993-03-14", gender: "m" },
   { initials: "MR2", displayName: "Miguel R.", legalName: "Miguel Rios Olaya",          firstName: "Miguel",        lastName: "Rios Olaya",        email: "miguel@domu.ai",    country: "CO", dateOfBirth: "1994-01-01", gender: "m" },
+  { initials: "SR",  displayName: "Sophia R.", legalName: "Sophia Rogoff",              firstName: "Sophia",        lastName: "Rogoff",            email: "sophierogoff@gmail.com", country: "US", dateOfBirth: "2002-04-10", gender: "f" },
 ]
 
 export function findEmployee(query: string): Employee | undefined {
   const q = query.toLowerCase().trim()
-  return employees.find(
+  if (!q) return undefined
+
+  // Exact / contains match
+  const exact = employees.find(
     (e) =>
       e.initials.toLowerCase() === q ||
-      e.displayName.toLowerCase().includes(q) ||
       e.legalName.toLowerCase().includes(q) ||
+      e.displayName.toLowerCase().includes(q) ||
       e.email.toLowerCase() === q
   )
+  if (exact) return exact
+
+  // Fuzzy: any word in legalName starts with the query (handles "sophia" → "Sophia Rogoff")
+  const wordStart = employees.find((e) =>
+    e.legalName.toLowerCase().split(/\s+/).some((w) => w.startsWith(q))
+  )
+  if (wordStart) return wordStart
+
+  // Fuzzy: query starts with a word in legalName (handles "sophie" ≈ "sophia")
+  const fuzzy = employees.find((e) =>
+    e.legalName.toLowerCase().split(/\s+/).some((w) => q.startsWith(w.slice(0, 5)) || w.startsWith(q.slice(0, 5)))
+  )
+  return fuzzy
 }
 
 export function employeeToPassenger(e: Employee): PassengerInfo {
