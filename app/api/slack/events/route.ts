@@ -44,6 +44,19 @@ async function postSlackReply(channelId: string, threadTs: string, text: string)
   } catch {}
 }
 
+async function addReaction(channelId: string, messageTs: string, emoji: string) {
+  try {
+    await fetch("https://slack.com/api/reactions.add", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+      },
+      body: JSON.stringify({ channel: channelId, timestamp: messageTs, name: emoji }),
+    })
+  } catch {}
+}
+
 async function getSlackUserName(userId: string): Promise<string> {
   try {
     const data = await slackGet("users.info", { user: userId })
@@ -337,6 +350,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Return 200 immediately — all processing in after() to prevent Slack retries
   after(async () => {
+    // Immediate visual feedback — user sees ⚡ before Claude finishes
+    await addReaction(channelId, messageTs, "zap")
+
     try {
       const [userName, channelName, threadHistory] = await Promise.all([
         getSlackUserName(userId),

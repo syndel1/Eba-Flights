@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
+import { SlackDemoSection } from "@/components/sections/slack-demo"
 
 export function LandingPage() {
   const router = useRouter()
@@ -504,6 +505,9 @@ export function LandingPage() {
           ))}
         </div>
       </section>
+
+      {/* SLACK DEMO */}
+      <SlackDemoSection />
 
       {/* FEATURES */}
       <section
