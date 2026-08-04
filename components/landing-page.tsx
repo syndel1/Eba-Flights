@@ -3,12 +3,10 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
-import { createClient } from "@/lib/supabase/client"
 import { SlackDemoSection } from "@/components/sections/slack-demo"
 
 export function LandingPage() {
   const router = useRouter()
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [statsVisible, setStatsVisible] = useState(false)
   const [featuresVisible, setFeaturesVisible] = useState(false)
   const [testimonialsVisible, setTestimonialsVisible] = useState(false)
@@ -39,14 +37,6 @@ export function LandingPage() {
   const [savedCount, setSavedCount] = useState(0)
   const [tripsCount, setTripsCount] = useState(0)
   const [reductionCount, setReductionCount] = useState(0)
-
-  // Check if user is already logged in
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(!!session)
-    })
-  }, [])
 
   // Custom cursor with lerp
   useEffect(() => {
@@ -172,12 +162,9 @@ export function LandingPage() {
   }
 
   const handleEnterApp = () => {
-    if (isLoggedIn) {
-      router.push("/dashboard")
-      return
-    }
     setIsTransitioning(true)
-    setTimeout(() => router.push("/login"), 600)
+    // Middleware redirects to /login automatically if there's no valid session.
+    setTimeout(() => router.push("/dashboard"), 600)
   }
 
   const handleCtaClick = () => {
@@ -302,10 +289,10 @@ export function LandingPage() {
           </div>
         </button>
         <button
-          onClick={() => router.push(isLoggedIn ? "/dashboard" : "/login")}
+          onClick={() => router.push("/dashboard")}
           className="clickable px-4 py-2 md:px-5 md:py-2.5 bg-black text-white text-[13px] md:text-sm font-medium rounded-full hover:bg-gray-800 transition-colors flex-shrink-0"
         >
-          {isLoggedIn ? "Go to dashboard →" : "Sign in →"}
+          Sign in →
         </button>
       </motion.nav>
 
@@ -673,7 +660,7 @@ export function LandingPage() {
             onClick={(e) => { e.stopPropagation(); handleEnterApp() }}
             className="clickable px-8 py-4 bg-white text-[#0043F1] font-bold rounded-full transition-all hover:scale-105 hover:shadow-xl"
           >
-            {isLoggedIn ? "Go to dashboard →" : "Enter Eba Flights →"}
+            Enter Eba Flights →
           </button>
         </div>
       </section>

@@ -1,10 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
 
 const navItems = [
   { id: "trip-feed", label: "Trip Feed" },
@@ -54,27 +53,13 @@ interface SidebarProps {
 
 export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
   const router = useRouter()
-  const [userName, setUserName] = useState<string | null>(null)
-  const [userInitials, setUserInitials] = useState("?")
+  const userName = "Domu Team"
+  const userInitials = "DT"
   const [loggingOut, setLoggingOut] = useState(false)
-
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        const name = user.user_metadata?.full_name || user.email?.split("@")[0] || "User"
-        setUserName(name)
-        setUserInitials(
-          name.split(" ").slice(0, 2).map((n: string) => n[0]?.toUpperCase() ?? "").join("")
-        )
-      }
-    })
-  }, [])
 
   async function handleLogout() {
     setLoggingOut(true)
-    const supabase = createClient()
-    await supabase.auth.signOut()
+    await fetch("/api/auth/logout", { method: "POST" })
     router.push("/login")
   }
 
