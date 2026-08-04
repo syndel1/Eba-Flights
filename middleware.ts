@@ -9,6 +9,12 @@ function isAllowedEmail(email: string | undefined): boolean {
 }
 
 export async function middleware(request: NextRequest) {
+  // Dev-only bypass for when Supabase auth is unreachable (e.g. project paused).
+  // Never set SKIP_AUTH in production.
+  if (process.env.SKIP_AUTH === "true") {
+    return NextResponse.next({ request })
+  }
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
