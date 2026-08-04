@@ -245,9 +245,11 @@ export function SlackDemoSection() {
     return () => clearInterval(interval)
   }, [started])
 
-  // Scroll to bottom as messages appear
+  // Scroll to bottom as messages appear — scroll only the chat box itself,
+  // never scrollIntoView (it can still drag the whole page's scroll position).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    const container = messagesEndRef.current?.parentElement
+    if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" })
   }, [visibleIds, isTyping])
 
   const visible = SEQUENCE.filter((m) => visibleIds.includes(m.id))
