@@ -247,7 +247,7 @@ export function SlackDemoSection() {
 
   // Scroll to bottom as messages appear
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
   }, [visibleIds, isTyping])
 
   const visible = SEQUENCE.filter((m) => visibleIds.includes(m.id))
