@@ -171,7 +171,7 @@ async function searchAndUpdateTrip(
 
     if (offers.length === 0) {
       await postSlackReply(channelId, threadTs,
-        `⚠️ No encontré vuelos disponibles para *${origin ?? "?"} → ${destination}* el *${departureDate}*. Prueba otra fecha.`
+        `⚠️ I couldn't find any available flights for *${origin ?? "?"} → ${destination}* on *${departureDate}*. Try another date.`
       )
       return
     }
@@ -180,16 +180,16 @@ async function searchAndUpdateTrip(
     await updateTrip(trip.id, { status: "awaiting", options, route: `${origin ?? "?"} → ${destination}` })
 
     const lines = offers.slice(0, 3).map((o, i) =>
-      `${i === 0 ? "✅ *Mejor precio*" : `${i + 1}.`} *${o.airline} ${o.flightNumber}* — $${Math.round(o.price)} · ${o.stops === 0 ? "Directo" : `${o.stops} escala`} · ${o.duration}`
+      `${i === 0 ? "✅ *Best price*" : `${i + 1}.`} *${o.airline} ${o.flightNumber}* — $${Math.round(o.price)} · ${o.stops === 0 ? "Nonstop" : `${o.stops} stop`} · ${o.duration}`
     )
 
     await postSlackReply(channelId, threadTs,
-      `🔍 Encontré *${offers.length} opciones* para *${origin ?? "?"} → ${destination}* el *${departureDate}*:\n\n${lines.join("\n")}\n\n¿Aprobamos? — *Felipe C.*`
+      `🔍 Found *${offers.length} options* for *${origin ?? "?"} → ${destination}* on *${departureDate}*:\n\n${lines.join("\n")}\n\nShall we book it? — *Felipe C.*`
     )
   } catch (err) {
     console.error("[searchAndUpdateTrip]", err)
     await postSlackReply(channelId, threadTs,
-      `⚠️ Tuve un problema buscando vuelos. Intenta de nuevo en un momento.`
+      `⚠️ I had trouble searching for flights. Try again in a moment.`
     )
   }
 }
@@ -211,13 +211,13 @@ async function handleApproval(channelId: string, threadTs: string, approverName:
 
     if (!destination || !departureDate) {
       await postSlackReply(channelId, threadTs,
-        "⚠️ No pude determinar la ruta completa. ¿Me confirmas origen, destino y fecha?"
+        "⚠️ I couldn't figure out the full route. Can you confirm the origin, destination and date?"
       )
       return
     }
 
     await postSlackReply(channelId, threadTs,
-      `✅ Aprobado por *${approverName}*. Consultando precio actual para *${origin} → ${destination}*...`
+      `✅ Approved by *${approverName}*. Checking the current price for *${origin} → ${destination}*...`
     )
 
     try {
@@ -231,7 +231,7 @@ async function handleApproval(channelId: string, threadTs: string, approverName:
 
       if (offers.length === 0) {
         await postSlackReply(channelId, threadTs,
-          `⚠️ No encontré vuelos disponibles para *${origin} → ${destination}* el *${departureDate}*. La ruta puede no estar disponible en este momento.`
+          `⚠️ I couldn't find any available flights for *${origin} → ${destination}* on *${departureDate}*. This route may not be available right now.`
         )
         return
       }
@@ -241,10 +241,10 @@ async function handleApproval(channelId: string, threadTs: string, approverName:
       await updateTrip(trip.id, { options: offersToTripOptions(offers) })
 
       await postSlackReply(channelId, threadTs,
-        `💰 Precio actual: *${best.airline} ${best.flightNumber}* — *$${Math.round(best.price)} USD* · ${best.stops === 0 ? "Directo" : `${best.stops} escala`} · ${best.duration}\n\nBookeando...`
+        `💰 Current price: *${best.airline} ${best.flightNumber}* — *$${Math.round(best.price)} USD* · ${best.stops === 0 ? "Nonstop" : `${best.stops} stop`} · ${best.duration}\n\nBooking now...`
       )
     } catch (err: any) {
-      await postSlackReply(channelId, threadTs, `⚠️ Error consultando vuelos: ${err.message}`)
+      await postSlackReply(channelId, threadTs, `⚠️ Error checking flights: ${err.message}`)
       return
     }
   }
@@ -255,7 +255,7 @@ async function handleApproval(channelId: string, threadTs: string, approverName:
 
   if (!passenger) {
     await postSlackReply(channelId, threadTs,
-      `⚠️ No encontré los datos de *${travelerName}* en la base de datos. ¿Me confirmas su email o pasaporte?`
+      `⚠️ I couldn't find *${travelerName}*'s info in the database. Can you confirm their email or passport?`
     )
     return
   }
@@ -278,12 +278,12 @@ async function handleApproval(channelId: string, threadTs: string, approverName:
     })
 
     await postSlackReply(channelId, threadTs,
-      `✅ *¡Vuelo confirmado!*\n\n🎫 *Referencia:* \`${bookingRef}\`\n✈️ *Ruta:* ${trip.route ?? ""}\n👤 *Pasajero:* ${passenger.firstName} ${passenger.lastName}\n${passenger.passportNumber ? `📋 *Pasaporte:* ${passenger.passportNumber}\n` : ""}\n_Eba hará el check-in automáticamente 24 horas antes del vuelo._`
+      `✅ *Your flight is booked!*\n\n🎫 *Confirmation number:* \`${bookingRef}\`\n✈️ *Route:* ${trip.route ?? ""}\n👤 *Passenger:* ${passenger.firstName} ${passenger.lastName}\n${passenger.passportNumber ? `📋 *Passport:* ${passenger.passportNumber}\n` : ""}\nThe airline has sent the confirmation to your email.\n\n_Eba will check you in automatically 24 hours before the flight._`
     )
   } catch (err: any) {
     console.error("[handleApproval booking]", err)
     await postSlackReply(channelId, threadTs,
-      `⚠️ Error al confirmar el booking: ${err.message ?? "intenta de nuevo."}`
+      `⚠️ Error confirming the booking: ${err.message ?? "please try again."}`
     )
   }
 }
@@ -293,14 +293,14 @@ async function handleApproval(channelId: string, threadTs: string, approverName:
 async function handleCheckCredits(channelId: string, threadTs: string) {
   const credits = await getActiveCredits()
   if (credits.length === 0) {
-    await postSlackReply(channelId, threadTs, "💳 No hay créditos de viaje disponibles actualmente.")
+    await postSlackReply(channelId, threadTs, "💳 There are no travel credits available right now.")
     return
   }
   const lines = credits.map((c) =>
-    `• *${c.airline ?? "Aerolínea"}* — ${c.credit_type === "credit" ? "Crédito" : "Reembolso"} *$${c.amount} ${c.currency ?? "USD"}*${c.expires_at ? ` · vence ${c.expires_at}` : ""}${c.notes ? ` · ${c.notes}` : ""}`
+    `• *${c.airline ?? "Airline"}* — ${c.credit_type === "credit" ? "Credit" : "Refund"} *$${c.amount} ${c.currency ?? "USD"}*${c.expires_at ? ` · expires ${c.expires_at}` : ""}${c.notes ? ` · ${c.notes}` : ""}`
   )
   await postSlackReply(channelId, threadTs,
-    `💳 *Créditos disponibles (${credits.length}):*\n\n${lines.join("\n")}`
+    `💳 *Available credits (${credits.length}):*\n\n${lines.join("\n")}`
   )
 }
 
@@ -457,21 +457,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (!passenger) {
           // Traveler not in DB — inform and ask for their passport
           await postSlackReply(channelId, threadTs,
-            `⚠️ No encontré a *${travelerName}* en la base de datos.\n\n¿Puedes enviarme una foto de su pasaporte para crear su perfil?`
+            `⚠️ I couldn't find *${travelerName}* in the database.\n\nCan you send me a photo of their passport so I can create their profile?`
           )
           return
         }
 
         // Confirm traveler data + tag Felipe for approval
         const passportLine = passenger.passportNumber
-          ? `📋 Pasaporte: \`${passenger.passportNumber}\` · Vence: ${passenger.passportExpiry ?? "n/a"}\n`
+          ? `📋 Passport: \`${passenger.passportNumber}\` · Expires: ${passenger.passportExpiry ?? "n/a"}\n`
           : ""
         const dobLine = `🎂 DOB: ${passenger.dateOfBirth}\n`
 
         await postSlackReply(channelId, threadTs,
-          `✅ *${passenger.firstName} ${passenger.lastName}* encontrado/a en la base de datos.\n${dobLine}${passportLine}\n` +
+          `✅ *${passenger.firstName} ${passenger.lastName}* found in the database.\n${dobLine}${passportLine}\n` +
           `✈️ *${fp.origin ?? "?"} → ${fp.destination}* · ${departureDate}\n\n` +
-          `¿Aprobamos este vuelo? — *Felipe C.*`
+          `Shall we book this flight? — *Felipe C.*`
         )
         return
       }
