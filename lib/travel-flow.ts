@@ -1,9 +1,9 @@
-import { addTrip, updateTrip, getTripByMessageTs, StoredTrip } from "./trips-store"
+import { updateTrip, getTripByMessageTs, StoredTrip } from "./trips-store"
 import { searchFlights, offersToTripOptions, bookFlight } from "./duffel"
 import { findTravelerByName } from "./travelers-store"
 import { createBooking, getActiveCredits } from "./bookings-store"
 import { findEmployee, employeeToPassenger } from "./employees"
-import { postSlackReply, approvalBlocks } from "./slack"
+import { postSlackReply } from "./slack"
 
 export function getInitials(name: string): string {
   return name.split(" ").slice(0, 2).map((n) => n[0]?.toUpperCase() ?? "").join("")
@@ -81,7 +81,8 @@ export async function searchAndUpdateTrip(
     )
 
     const text = `🔍 Found *${offers.length} options* for *${origin ?? "?"} → ${destination}* on *${departureDate}*:\n\n${lines.join("\n")}\n\nShall we book it? — *Syndel*`
-    await postSlackReply(channelId, threadTs, text, approvalBlocks(text, threadTs))
+    // Buttons disabled — Slack app's Interactivity Request URL isn't configured yet.
+    await postSlackReply(channelId, threadTs, text)
   } catch (err) {
     console.error("[searchAndUpdateTrip]", err)
     await postSlackReply(channelId, threadTs,

@@ -11,7 +11,6 @@ import {
   getChannelName,
   getThreadHistory,
   downloadSlackFile,
-  approvalBlocks,
 } from "@/lib/slack"
 import {
   getInitials,
@@ -187,7 +186,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           `✈️ *${fp.origin ?? "?"} → ${fp.destination}* · ${departureDate}\n\n` +
           `Shall we book this flight? — *Syndel*`
 
-        await postSlackReply(channelId, threadTs, confirmText, approvalBlocks(confirmText, threadTs))
+        // Buttons disabled — Slack app's Interactivity Request URL isn't configured yet.
+        await postSlackReply(channelId, threadTs, confirmText)
         return
       }
 
