@@ -2,7 +2,11 @@ import Anthropic from "@anthropic-ai/sdk"
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-const SYSTEM_PROMPT = `You are Eba, Domu's intelligent travel assistant inside Slack. You manage all travel for the Domu team.
+function buildSystemPrompt(): string {
+  const today = new Date().toISOString().slice(0, 10)
+  return `You are Eba, Domu's intelligent travel assistant inside Slack. You manage all travel for the Domu team.
+
+TODAY'S DATE IS ${today}. Use this to resolve any relative date the user mentions ("tomorrow", "next week", "in 3 days", "this Friday", etc.) into an exact "YYYY-MM-DD". Never output a departure_date on or before ${today}.
 
 PERSONALITY: Friendly, efficient, professional. Match the user's language (Spanish or English). Keep responses concise — this is Slack.
 
@@ -94,6 +98,7 @@ NOT TRAVEL (action = "not_travel"):
 
 REPLY (action = "reply"):
   → Need clarification or general conversational response`
+}
 
 export interface PassportData {
   legal_name?: string
@@ -163,7 +168,7 @@ export async function analyzeMessage(
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1000,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(),
     messages,
   })
 

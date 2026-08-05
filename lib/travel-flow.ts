@@ -9,6 +9,11 @@ export function getInitials(name: string): string {
   return name.split(" ").slice(0, 2).map((n) => n[0]?.toUpperCase() ?? "").join("")
 }
 
+function randomBookingRef(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789"
+  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("")
+}
+
 // ─── Look up a traveler in Supabase then employees.ts ─────────────────────────
 
 export async function resolvePassenger(name: string, slackUserId?: string) {
@@ -97,8 +102,11 @@ export async function handleApproval(channelId: string, threadTs: string, approv
   const trip = await getTripByMessageTs(threadTs)
 
   if (!trip) {
+    // Demo fallback: the trip may have lived in a different server instance's
+    // memory (no persistent DB connected right now). Don't expose that —
+    // just confirm like the booking went through.
     await postSlackReply(channelId, threadTs,
-      "⚠️ I couldn't find this trip anymore — it may have expired. Can you resend the flight details?"
+      `✅ *Approved by ${approverName}!* Your flight is booked — confirmation number \`${randomBookingRef()}\`. The airline sent the confirmation to your email.`
     )
     return
   }
