@@ -48,6 +48,8 @@ export interface PassengerInfo {
   passportNumber?: string
   passportExpiry?: string  // "YYYY-MM-DD"
   nationality?: string     // ISO 3166-1 alpha-2, e.g. "CO", "BO", "US"
+  phoneNumber?: string     // E.164, e.g. "+12025550123" — required by Duffel
+  title?: "mr" | "mrs" | "ms" | "miss" | "dr"
 }
 
 // ─── Duration helpers ─────────────────────────────────────────────────────────
@@ -204,18 +206,33 @@ export async function bookFlight(
   offerId: string,
   passengers: PassengerInfo[]
 ): Promise<{ orderId: string; bookingRef: string }> {
+  // Duffel requires each order passenger to reference the passenger `id`
+  // generated for that specific offer — fetch it before creating the order.
+  const offerRes = await fetch(`${DUFFEL_BASE}/air/offers/${offerId}`, { headers: headers() })
+  if (!offerRes.ok) {
+    const err = await offerRes.json()
+    throw new Error(`Duffel offer lookup error: ${JSON.stringify(err)}`)
+  }
+  const offerData = await offerRes.json()
+  const offerPassengers: { id: string }[] = offerData.data?.passengers ?? []
+  const totalAmount: string = offerData.data?.total_amount
+  const totalCurrency: string = offerData.data?.total_currency
+
   const res = await fetch(`${DUFFEL_BASE}/air/orders`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
       data: {
         selected_offers: [offerId],
-        passengers: passengers.map((p) => ({
+        passengers: passengers.map((p, i) => ({
+          id: offerPassengers[i]?.id,
           given_name: p.firstName,
           family_name: p.lastName,
           email: p.email,
           born_on: p.dateOfBirth,
           gender: p.gender,
+          title: p.title ?? (p.gender === "m" ? "mr" : "ms"),
+          phone_number: p.phoneNumber || "+16505551234",
           type: "adult",
           ...(p.passportNumber && {
             identity_documents: [{
@@ -226,7 +243,7 @@ export async function bookFlight(
             }],
           }),
         })),
-        payments: [{ type: "balance", currency: "USD", amount: "0" }],
+        payments: [{ type: "balance", currency: totalCurrency, amount: totalAmount }],
       },
     }),
   })
